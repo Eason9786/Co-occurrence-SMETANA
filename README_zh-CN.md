@@ -84,6 +84,4 @@ python -m unittest discover -s tests -v
 
 测试覆盖组合数量、可复现性、TSV 格式、输入检查及批处理命令；外部求解器调用使用模拟测试，不能据此宣称生物学结果得到验证。
 
-## 机构、许可与引用
 
-湘潭大学环境与资源学院，湘潭 411105，中国。英文机构名称、CarveMe 与 SMETANA 引用见 [English README](README.md#institution)。本仓库脚本依照所提供 README 中的许可说明，采用 [MIT License](LICENSE)；外部软件遵守各自许可证。MetaCoNet 的关联论文信息尚未提供。
