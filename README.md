@@ -121,11 +121,6 @@ python -m unittest discover -s tests -v
 
 Tests exercise sampling, TSV formatting, input validation, and subprocess handling. Batch execution tests use mocked commands; they do not establish biological validity or solver compatibility. The environment files are starting specifications, not fully locked or end-to-end benchmarked environments. Historical local notes used SMETANA 1.2.0 and Python 3.6; this release modernizes the wrappers (Python >=3.8) and proposes SMETANA 1.2.1 with Python 3.10. Existing validated environments can be selected with `--conda-env`; revalidate results when changing software or solver versions.
 
-## Institution
-
-Hunan Provincial University Key Laboratory for Environmental and Ecological Health  
-Hunan Provincial University Key Laboratory for Environmental Behavior and Control Principle of New Pollutants  
-College of Environment and Resources, Xiangtan University, Xiangtan 411105, China
 
 ## License and citation
 
