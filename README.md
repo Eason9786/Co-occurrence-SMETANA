@@ -1,18 +1,12 @@
-# MetaCoNet: Higher-order co-occurrence and SMETANA
+# Higher-order co-occurrence analysis and SMETANA
 
 Infer enriched microbial species groups across samples, then evaluate their metabolic interaction potential with [SMETANA](https://github.com/cdanielmachado/smetana).
 
-[中文说明](README_zh-CN.md) · [Installation](INSTALL.md) · [Method and limitations](docs/METHODS.md) · [Changes](CHANGELOG.md)
-
-## What changed
-
-`Computing co-occurrence_Single.py` now performs a statistical, iterative search informed by **Computing co-occurrence** in [Machado et al. (2021)](https://doi.org/10.1038/s41559-020-01353-4). Its input is a **multi-sample abundance table**, not an XML folder. The filename is retained for continuity; `Single` means one multi-sample dataset, not one ecological sample.
-
-The previous random-combination generator is preserved as `legacy/random_subcommunities.py`. It can create artificial community candidates, but does not infer co-occurrence and is not a complete reproduction of the paper's matched random-control analysis.
+[中文说明](README_zh-CN.md) · [Installation](INSTALL.md) · [Method and limitations](docs/METHODS.md)
 
 ## Workflow and input
 
-The workflow is: define and quality-control the sample population, threshold abundances, infer higher-order co-occurrence across samples, match species to metabolic models, and simulate the selected groups. Abundance profiles establish co-occurrence; SBML models describe metabolic capabilities. Co-occurrence does not itself establish cooperation, competition or direct interaction.
+The workflow is: define and quality-control the sample population, threshold abundances, infer higher-order co-occurrence across samples, match species to metabolic models, and simulate the selected groups. `Computing co-occurrence_Single.py` processes one multi-sample abundance table using an iterative strategy based on [Machado et al. (2021)](https://doi.org/10.1038/s41559-020-01353-4). `Smetana_FWQ.py` runs the selected groups against a consistent SBML model library. Co-occurrence describes association; metabolic models provide estimates of interaction potential.
 
 The abundance file has a header, species as rows and samples as columns. The first column contains unique species IDs:
 
@@ -28,9 +22,20 @@ This three-sample illustration explains the format, but cannot satisfy the defau
 - `--input-kind counts` (default): divide each sample column by its full supplied total, then threshold. Supply the complete count table relevant to that denominator.
 - `--input-kind tpm`: divide values by 1,000,000 without renormalizing a species subset. Column totals must not exceed 1,000,000, apart from a small rounding tolerance.
 - `--input-kind relative`: supply fractions from 0 to 1, with column sums at most 1; a partial table is not renormalized. Convert percentages to fractions first.
-- `--input-kind presence-absence`: supply exactly 0/1 values representing previously defined detection. The abundance cutoff is not reapplied.
+- `--input-kind presence-absence`: supply exactly 0/1 values using a detection threshold defined upstream.
 
-Abundance must be **strictly greater than** the cutoff to count as present. All sample columns are retained, including zero-total columns; remove failed samples upstream using a documented quality-control rule. Do not select `counts` for a partial TPM table: that would change the denominator and the meaning of the abundance cutoff.
+Abundance must be **strictly greater than** the cutoff to count as present. All sample columns are retained, including zero-total columns; remove failed samples upstream using a documented quality-control rule. Use `tpm` for a partial TPM table to preserve its original abundance denominator.
+
+## Installation
+
+Use Python 3.10 or newer. For inference and SMETANA with the supplied Conda environment:
+
+```bash
+conda env create -f environment_smetana.yml
+conda activate smetana_env
+```
+
+Configure a supported solver before metabolic simulation; see [INSTALL.md](INSTALL.md). For inference alone in an existing Python environment, install `requirements.txt` with `python -m pip install -r requirements.txt`.
 
 ## Quick start with 48 synthetic TPM samples
 
@@ -69,7 +74,7 @@ A significant group must have at least 10 joint observations, at least twice its
 
 Change criteria with `--min-samples`, `--min-fold`, `--fdr-cutoff`, `--top-n` and `--population-size`. The default maximum size is 5 and can be increased. Higher-order search is heuristic, not exhaustive. `--max-candidates` defaults to 1,000,000 and fails explicitly if a family exceeds the limit, rather than silently subsampling its tests. Candidates and statistics are held in memory across orders; the cap is a resource guard, not a streaming/scalability guarantee. No hits is a valid result; thresholds are not automatically relaxed and random communities are not substituted.
 
-This independent implementation follows the paper's strategy, **not an exact reproduction of HiOrCo**. The inclusive binomial tail and frequency weights differ from the inspected reference code; `--pvalue-tail strict` and `--selection-weight sqrt-frequency` expose those two reference conventions. Preprocessing and other differences remain. See [METHODS.md](docs/METHODS.md) before comparing results or interpreting significance.
+The default binomial enrichment tail is `P(X >= observed)` and the default propagation weight is observed frequency. `--pvalue-tail strict` selects `P(X > observed)`; `--selection-weight sqrt-frequency` selects square-root frequency weights. The exact definitions, assumptions and relation to [HiOrCo](https://github.com/cdanielmachado/HiOrCo) are documented in [METHODS.md](docs/METHODS.md).
 
 ## Outputs
 
@@ -85,7 +90,7 @@ community_2_0001	species_A
 community_2_0001	species_B
 ```
 
-An empty `communities.tsv` with a completed summary means no groups passed. Inspect the statistics before simulation; the runner rejects an empty community file. The new inference script writes TSV/JSON, does not export Excel, and does not accept the old `--total-budget` option.
+An empty `communities.tsv` with a completed summary means no groups passed. Inspect the statistics before simulation; the runner rejects an empty community file. Inference outputs use TSV/JSON.
 
 ## Run SMETANA
 
@@ -101,7 +106,7 @@ python Smetana_FWQ.py "data/models" --single --communities "../../results/tpm_0p
 
 `global.tsv` or `detailed.tsv` and `smetana_run.log` are written in the model folder. Repeated runs can overwrite these files; retain independent model-folder copies for comparisons. Preflight checks model names and community membership, not SBML validity or solver licensing.
 
-Do not infer co-occurrence independently inside each single sample. With fixed GEMs and unchanged simulation settings, repeatedly simulating the same group for every observed sample adds no sample-specific metabolic information. Sample-specific model variants or media require an explicit design and separate outputs. The runner's original batch/group options remain available for such prepared inputs; see `--help`.
+Inference requires multiple ecological samples. With fixed GEMs and simulation settings, simulate each selected group once. Sample-specific model variants or media require an explicit design and separate outputs. The runner supports sample-folder and group-folder batches for such prepared inputs; see `--help`.
 
 ## Validation, limitations and citation
 
@@ -109,9 +114,9 @@ Do not infer co-occurrence independently inside each single sample. With fixed G
 python -m unittest discover -s tests -v
 ```
 
-Tests cover statistical calculations, search behavior, input checks, reproducibility and command handling. Synthetic and mocked tests do not establish biological validity or solver compatibility. Shared habitats, repeated measurements, sequencing batches and model coverage can affect associations. Per-order BH correction is not a global FDR guarantee for the complete adaptive search. Claims of polarization require consistent MIP/MRO comparisons and suitable same-size controls; the archived sampler alone does not establish them.
+Tests cover statistical calculations, search behavior, input checks, reproducibility and command handling. Synthetic and mocked tests do not establish biological validity or solver compatibility. Shared habitats, repeated measurements, sequencing batches and model coverage can affect associations. Per-order BH correction is not a global FDR guarantee for the complete adaptive search. Claims of polarization require consistent MIP/MRO comparisons and suitable same-size controls.
 
-`legacy/` contains dataset-specific preprocessing helpers. Optional model reconstruction and solver configuration are described in [INSTALL.md](INSTALL.md). Environment files propose Python 3.10 and SMETANA 1.2.1; they are starting specifications, not locked reproductions of the paper's SMETANA 1.0 setup.
+`legacy/` contains optional dataset-specific preprocessing helpers and `random_subcommunities.py` for artificial control candidates. Match control group sizes and counts explicitly when designing a comparison. Optional model reconstruction and solver configuration are described in [INSTALL.md](INSTALL.md). Environment files specify Python 3.10 and SMETANA 1.2.1; export the resolved environment after installation for reproducibility.
 
 Workflow code uses the [MIT License](LICENSE). External tools retain their own licenses; no solver key or private dataset is included. Cite this repository and the methods/tools used:
 

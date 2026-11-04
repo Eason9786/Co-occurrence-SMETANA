@@ -1,5 +1,5 @@
 # Statistical co-occurrence inference; SMETANA and its solver are installed separately.
 numpy>=1.24,<3
 scipy>=1.10,<2
-# Optional Excel export for the legacy random community generator.
+# Optional Excel export for the random community generator.
 openpyxl>=3.1,<4

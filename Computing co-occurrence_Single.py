@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Infer higher-order co-occurrence from a species-by-sample abundance table.
 
-Independent implementation of the iterative strategy described by Machado et al.
+Higher-order search based on the iterative strategy of Machado et al.
 (2021), doi:10.1038/s41559-020-01353-4. Requires Python >=3.10, NumPy and SciPy.
 Default binomial tails are inclusive and propagation weights are frequencies;
-see docs/METHODS.md for differences from the public HiOrCo implementation.
+see docs/METHODS.md for statistical definitions and configurable parameters.
 """
 
 import argparse

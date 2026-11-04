@@ -11,7 +11,7 @@ python "Computing co-occurrence_Single.py" "examples/synthetic_tpm_48.tsv" --inp
 python -m unittest discover -s tests -v
 ```
 
-`requirements.txt` also includes openpyxl for the optional Excel feature in the **legacy random-combination script**. The new statistical inference script writes TSV/JSON, not Excel.
+`requirements.txt` also includes openpyxl for optional Excel output from the random-community utility. The statistical inference script writes TSV and JSON.
 
 The example is synthetic and verifies computation only; it contains no usable SBML models. Use a new or empty output directory for a repeated run. TPM values require `--input-kind tpm`; they are divided by one million without rescaling a species subset. A relative-abundance cutoff of `0.001` therefore means strictly more than 1,000 TPM.
 
@@ -27,7 +27,7 @@ python -c "import numpy, scipy; print(numpy.__version__, scipy.__version__)"
 smetana --help
 ```
 
-This proposes Python 3.10, inference dependencies, SMETANA 1.2.1 and Gurobi's Python interface. It is a starting specification, not a tested dependency lock or reproduction of the paper's SMETANA 1.0 simulations. The historical Python 3.6 setup is unsuitable for this release's dependencies.
+The environment specifies Python 3.10, inference dependencies, SMETANA 1.2.1 and Gurobi's Python interface. It is an installation specification rather than a fully locked environment. Record the resolved package and solver versions used for an analysis.
 
 The wrappers can be used on Windows when `smetana` is a working command in the selected environment. Linux/WSL is convenient for the optional DIAMOND/CarveMe workflow. WSL needs Linux paths and environments installed within WSL, rather than Windows Conda paths.
 
