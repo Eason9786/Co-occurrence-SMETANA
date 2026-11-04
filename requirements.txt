@@ -1,0 +1,2 @@
+# Optional Excel export for the community generator; SMETANA is installed separately.
+openpyxl>=3.1,<4

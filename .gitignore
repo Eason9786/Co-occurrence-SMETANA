@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.test_tmp/
+.venv/
+.env
+*.lic
+gurobi.log
+*.log
+.DS_Store
+Thumbs.db
+# Local datasets and generated simulations (do not commit biological data by accident).
+data/
+results/
+*.faa
+*.fasta
+*.fa
+*.xml
+*.xml.gz
+*.xlsx
+communities.tsv
+global.tsv
+detailed.tsv
+environment_*_resolved.yml
