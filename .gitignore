@@ -12,6 +12,7 @@ Thumbs.db
 # Local datasets and generated simulations (do not commit biological data by accident).
 data/
 results/
+cooccurrence_results/
 *.faa
 *.fasta
 *.fa

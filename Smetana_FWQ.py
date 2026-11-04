@@ -3,6 +3,8 @@
 
 Activate the environment containing SMETANA before running this script, or use
 --conda-env. Each sample contains .xml models and a headerless communities.tsv.
+For groups inferred across samples, use a consistent model library with --single
+and --communities pointing to the statistical inferencer's communities.tsv.
 """
 
 import argparse

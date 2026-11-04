@@ -1,134 +1,122 @@
-# MetaCoNet: Co-occurrence–SMETANA workflow
+# MetaCoNet: Higher-order co-occurrence and SMETANA
 
-Scripts for preparing candidate microbial subcommunities from genome-scale metabolic models and running [SMETANA](https://github.com/cdanielmachado/smetana) in batches.
+Infer enriched microbial species groups across samples, then evaluate their metabolic interaction potential with [SMETANA](https://github.com/cdanielmachado/smetana).
 
-[中文说明](README_zh-CN.md) · [Installation](INSTALL.md) · [Changes from the local scripts](CHANGELOG.md)
+[中文说明](README_zh-CN.md) · [Installation](INSTALL.md) · [Method and limitations](docs/METHODS.md) · [Changes](CHANGELOG.md)
 
-## Scope
+## What changed
 
-This repository shares the practical model-combination and simulation workflow of MetaCoNet (Metabolic Co-occurrence Network). Starting with one SBML XML model per species in a sample or module folder, it samples candidate communities of 2–5 species, writes SMETANA-compatible community definitions, and runs global or detailed metabolic interaction analysis.
+`Computing co-occurrence_Single.py` now performs a statistical, iterative search informed by **Computing co-occurrence** in [Machado et al. (2021)](https://doi.org/10.1038/s41559-020-01353-4). Its input is a **multi-sample abundance table**, not an XML folder. The filename is retained for continuity; `Single` means one multi-sample dataset, not one ecological sample.
 
-**The supplied community generator samples combinations within a single folder. It does not calculate cross-sample co-occurrence frequencies, binomial p-values, FDR/q-values, abundance thresholds, or statistically significant associations.** Any ecological network/module selection and abundance filtering must be performed upstream. Generated combinations are candidate communities, not evidence of mutualism or observed co-occurrence.
+The previous random-combination generator is preserved as `legacy/random_subcommunities.py`. It can create artificial community candidates, but does not infer co-occurrence and is not a complete reproduction of the paper's matched random-control analysis.
 
-## Main files
+## Workflow and input
 
-- `Computing co-occurrence_Single.py`: reproducible sampling across community sizes, with a configurable total budget; exports TSV and optional Excel.
-- `Smetana_FWQ.py`: validates community definitions, runs SMETANA per sample, saves logs, and reports failures.
-- `environment_smetana.yml`: proposed Python 3.10 / SMETANA 1.2.1 environment, including the Gurobi Python interface.
-- `environment_carveme.yml`: optional model-reconstruction environment with CarveMe and DIAMOND.
-- `legacy/`: original dataset-specific FASTA preparation helpers, with limitations documented separately.
-- `tests/`: checks for community sampling and batch execution; no solver required.
+The workflow is: define and quality-control the sample population, threshold abundances, infer higher-order co-occurrence across samples, match species to metabolic models, and simulate the selected groups. Abundance profiles establish co-occurrence; SBML models describe metabolic capabilities. Co-occurrence does not itself establish cooperation, competition or direct interaction.
 
-## Input layout
+The abundance file has a header, species as rows and samples as columns. The first column contains unique species IDs:
 
-Provide your own valid SBML models; biological datasets, model files and solver licenses are not bundled.
+```text
+species_id	sample_01	sample_02	sample_03
+species_A	100	0	50
+species_B	120	0	60
+species_C	0	200	90
+```
+
+This three-sample illustration explains the format, but cannot satisfy the default minimum of 10 co-occurring samples. Values must be complete, numeric, finite and nonnegative. Duplicate or empty species/sample IDs are rejected. TSV is the default; use `--sep comma` for CSV.
+
+- `--input-kind counts` (default): divide each sample column by its full supplied total, then threshold. Supply the complete count table relevant to that denominator.
+- `--input-kind tpm`: divide values by 1,000,000 without renormalizing a species subset. Column totals must not exceed 1,000,000, apart from a small rounding tolerance.
+- `--input-kind relative`: supply fractions from 0 to 1, with column sums at most 1; a partial table is not renormalized. Convert percentages to fractions first.
+- `--input-kind presence-absence`: supply exactly 0/1 values representing previously defined detection. The abundance cutoff is not reapplied.
+
+Abundance must be **strictly greater than** the cutoff to count as present. All sample columns are retained, including zero-total columns; remove failed samples upstream using a documented quality-control rule. Do not select `counts` for a partial TPM table: that would change the denominator and the meaning of the abundance cutoff.
+
+## Quick start with 48 synthetic TPM samples
+
+Install dependencies using [INSTALL.md](INSTALL.md), then run from the repository root:
+
+```bash
+python "Computing co-occurrence_Single.py" "examples/synthetic_tpm_48.tsv" --input-kind tpm --output "results/demo"
+```
+
+This artificial dataset is expected to identify A/B, A/C, B/C and A/B/C. Their observed count is 12 of 48 samples; expected counts are 3 for each pair and 0.75 for the triple. It tests computational behavior only and includes no usable SBML models.
+
+For your own TPM data and model library:
 
 ```text
 data/
-  sample_01/
+  abundance_tpm.tsv
+  models/
     species_A.xml
     species_B.xml
-    species_C.xml
-    communities.tsv       # generated in step 1
-  sample_02/
     ...
 ```
 
-The model filename without `.xml` is the species identifier. Use unique identifiers and lowercase `.xml` extensions. The scripts read XML files directly inside each sample folder; compressed models are not supported by these wrappers.
+```bash
+python "Computing co-occurrence_Single.py" "data/abundance_tpm.tsv" --input-kind tpm --models-dir "data/models" --abundance-cutoff 0.001 --max-combo-size 5 --top-n 1000 --population-size 10000 --seed 42 --output "results/tpm_0p1"
+```
 
-## Quick start
+`--models-dir` is optional. It limits the tested species universe to exact model filename stems, after abundance conversion and thresholding. It changes the hypothesis family and reports excluded species. Use lowercase `.xml` filenames. Without it, all input species are tested; ensure every exported member has a suitable model before simulation.
 
-First follow [INSTALL.md](INSTALL.md) to install SMETANA and configure a solver. Run commands from the repository root. Quote the generator filename because it contains a space.
+Use a new or empty output directory for each run; the default is `cooccurrence_results` if `--output` is omitted. A cutoff of `0.001` is 0.1%, or strictly more than 1,000 TPM. For sensitivity to 0.01%, rerun with `--abundance-cutoff 0.0001` (strictly more than 100 TPM) and a different output directory. Those cutoffs do not automatically label groups competitive or cooperative.
 
-### 1. Generate communities for one sample
+## Statistical defaults
+
+For each evaluated group, count samples where every member is present. Under an independent-occurrence null, the expected count is the number of samples multiplied by the product of member prevalences. A one-sided binomial enrichment test is followed by Benjamini-Hochberg correction across **all evaluated groups of that size**, before support or fold filtering.
+
+A significant group must have at least 10 joint observations, at least twice its expected count, and an adjusted p-value at most 0.05. With 48 samples, the minimum support requires presence in at least 20.8% of the samples. The top 1,000 significant groups by frequency are exported **per size**. Up to 10,000 significant groups, sampled without replacement with weights proportional to observed frequency, seed the next order; each is extended by every eligible additional species.
+
+Change criteria with `--min-samples`, `--min-fold`, `--fdr-cutoff`, `--top-n` and `--population-size`. The default maximum size is 5 and can be increased. Higher-order search is heuristic, not exhaustive. `--max-candidates` defaults to 1,000,000 and fails explicitly if a family exceeds the limit, rather than silently subsampling its tests. Candidates and statistics are held in memory across orders; the cap is a resource guard, not a streaming/scalability guarantee. No hits is a valid result; thresholds are not automatically relaxed and random communities are not substituted.
+
+This independent implementation follows the paper's strategy, **not an exact reproduction of HiOrCo**. The inclusive binomial tail and frequency weights differ from the inspected reference code; `--pvalue-tail strict` and `--selection-weight sqrt-frequency` expose those two reference conventions. Preprocessing and other differences remain. See [METHODS.md](docs/METHODS.md) before comparing results or interpreting significance.
+
+## Outputs
+
+- `communities.tsv`: selected groups across completed sizes, in SMETANA's two-column, **headerless** format.
+- `size_N_communities.tsv`: selected groups for one size, in the same format.
+- `size_N_statistics.tsv`: every evaluated candidate, JSON member IDs, observed/expected counts, enrichment fold, raw and adjusted p-values, and selection flags.
+- `run_summary.json`: input hash, settings, processing metadata, per-order counts and stopping reason.
+
+Example community definition:
+
+```text
+community_2_0001	species_A
+community_2_0001	species_B
+```
+
+An empty `communities.tsv` with a completed summary means no groups passed. Inspect the statistics before simulation; the runner rejects an empty community file. The new inference script writes TSV/JSON, does not export Excel, and does not accept the old `--total-budget` option.
+
+## Run SMETANA
+
+Use the inferred group file once with a model library containing all referenced IDs. For the directory layout above:
 
 ```bash
 conda activate smetana_env
-python "Computing co-occurrence_Single.py" "data/sample_01" --max-combo-size 5 --total-budget 1000 --seed 42 --output "data/sample_01/communities.tsv" --excel "data/sample_01/communities.xlsx"
+python Smetana_FWQ.py "data/models" --single --communities "../../results/tpm_0p1/communities.tsv" --solver gurobi --mode global --dry-run
+python Smetana_FWQ.py "data/models" --single --communities "../../results/tpm_0p1/communities.tsv" --solver gurobi --mode global
 ```
 
-Repeat for each sample to be simulated. The generator distributes the budget as evenly as possible across sizes 2 to `min(max_combo_size, species_count)`, redistributing capacity left over from smaller sizes. It returns at most the available number of distinct combinations. The same seed, model identifiers, arguments and Python version give reproducible output.
+`--communities` is resolved relative to the model folder, hence `../../results/...`; an absolute path also works. `--single` means **one model library**, not one ecological sample. Global mode requests MIP/MRO; use `--mode detailed` for donor-receiver-metabolite scores. Alternatively add `--conda-env smetana_env` to launch SMETANA through Conda.
 
-TSV files contain **two tab-separated columns without a header**, one community/member pair per row:
+`global.tsv` or `detailed.tsv` and `smetana_run.log` are written in the model folder. Repeated runs can overwrite these files; retain independent model-folder copies for comparisons. Preflight checks model names and community membership, not SBML validity or solver licensing.
 
-```text
-community1	species_A
-community1	species_B
-community2	species_A
-community2	species_C
-```
+Do not infer co-occurrence independently inside each single sample. With fixed GEMs and unchanged simulation settings, repeatedly simulating the same group for every observed sample adds no sample-specific metabolic information. Sample-specific model variants or media require an explicit design and separate outputs. The runner's original batch/group options remain available for such prepared inputs; see `--help`.
 
-Species IDs must match the model filenames. Excel output includes a `Community` / `Species` header for readability; do not pass the Excel file or a headered TSV directly to SMETANA.
-
-### 2. Check inputs and commands
-
-```bash
-python Smetana_FWQ.py "data" --solver gurobi --dry-run
-```
-
-This checks model filenames and community membership and prints the command for each sample. It does not parse SBML, check solver licensing, or run simulations.
-
-### 3. Run SMETANA
-
-```bash
-python Smetana_FWQ.py "data" --solver gurobi --mode global
-```
-
-Global mode requests SMETANA's MIP/MRO analysis. Detailed mode requests donor–receiver–metabolite interaction scores:
-
-```bash
-python Smetana_FWQ.py "data" --solver gurobi --mode detailed
-```
-
-Outputs are written inside each sample folder: `global.tsv` or `detailed.tsv`, plus `smetana_run.log`. Running again can overwrite these files, so use a separate copy of the input folders for runs you want to retain. Scores reflect the supplied models and SMETANA's environmental assumptions; they require biological interpretation.
-
-For a single model folder, use `--single`:
-
-```bash
-python Smetana_FWQ.py "data/sample_01" --single --solver gurobi
-```
-
-For the original group/sample layout (`data/CK_XML/sample_01`, etc.):
-
-```bash
-python Smetana_FWQ.py "data" --groups CK_XML DL_XML SL_XML UL_XML --solver gurobi
-```
-
-By default the runner uses `smetana` from the active environment. Alternatively, launch SMETANA with Conda explicitly:
-
-```bash
-python Smetana_FWQ.py "data" --conda-env smetana_env --solver gurobi
-```
-
-`--communities` changes the default `communities.tsv` filename; an absolute path can be used for a shared file only when all referenced models exist in every sample. A failed sample does not prevent later samples from running, but the overall command exits with an error. See `--help` on either script for all options.
-
-## Optional upstream reconstruction
-
-Protein FASTA files can be reconstructed with CarveMe after installing its own environment and a supported solver:
-
-```bash
-conda activate carveme_env
-carve -r "species_faa/*.faa" -o "data/sample_01" --solver gurobi
-```
-
-Use `--dna` for nucleotide input, not protein FASTA. Verify model quality, growth feasibility, identifier consistency, and biological suitability before downstream analysis. The optional `legacy/` scripts demonstrate dataset-specific sequence preparation and file selection; they do not implement the abundance filtering discussed in the original project outline.
-
-## Validation and reproducibility
+## Validation, limitations and citation
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Tests exercise sampling, TSV formatting, input validation, and subprocess handling. Batch execution tests use mocked commands; they do not establish biological validity or solver compatibility. The environment files are starting specifications, not fully locked or end-to-end benchmarked environments. Historical local notes used SMETANA 1.2.0 and Python 3.6; this release modernizes the wrappers (Python >=3.8) and proposes SMETANA 1.2.1 with Python 3.10. Existing validated environments can be selected with `--conda-env`; revalidate results when changing software or solver versions.
+Tests cover statistical calculations, search behavior, input checks, reproducibility and command handling. Synthetic and mocked tests do not establish biological validity or solver compatibility. Shared habitats, repeated measurements, sequencing batches and model coverage can affect associations. Per-order BH correction is not a global FDR guarantee for the complete adaptive search. Claims of polarization require consistent MIP/MRO comparisons and suitable same-size controls; the archived sampler alone does not establish them.
 
+`legacy/` contains dataset-specific preprocessing helpers. Optional model reconstruction and solver configuration are described in [INSTALL.md](INSTALL.md). Environment files propose Python 3.10 and SMETANA 1.2.1; they are starting specifications, not locked reproductions of the paper's SMETANA 1.0 setup.
 
-## License and citation
+Workflow code uses the [MIT License](LICENSE). External tools retain their own licenses; no solver key or private dataset is included. Cite this repository and the methods/tools used:
 
-These workflow scripts are distributed under the [MIT License](LICENSE), following the supplied project README. SMETANA, CarveMe, solvers and their dependencies retain their own licenses. Gurobi requires an appropriate license for your usage; no key is included here.
-
-A MetaCoNet publication citation has not yet been supplied. Until available, cite the repository and the tools used:
-
-- Machado D., Andrejev S., Tramontano M., Patil K. R. (2018). *Fast automated reconstruction of genome-scale metabolic models for microbial species and communities.* Nucleic Acids Research, 46(15), 7542–7553. [CarveMe](https://github.com/cdanielmachado/carveme).
-- Zelezniak A. et al. (2015). *Metabolic dependencies drive species co-occurrence in diverse microbial communities.* PNAS, 112(20), 6449–6454. [SMETANA citation](https://github.com/cdanielmachado/smetana#citing-smetana).
+- Machado et al. (2021). *Polarization of microbial communities between competitive and cooperative metabolism.* Nature Ecology & Evolution 5, 195-203. [Article](https://doi.org/10.1038/s41559-020-01353-4), [HiOrCo](https://github.com/cdanielmachado/HiOrCo).
+- Machado et al. (2018). *Fast automated reconstruction of genome-scale metabolic models for microbial species and communities.* Nucleic Acids Research 46, 7542-7553. [CarveMe](https://github.com/cdanielmachado/carveme).
+- Zelezniak et al. (2015). *Metabolic dependencies drive species co-occurrence in diverse microbial communities.* PNAS 112, 6449-6454. [SMETANA](https://github.com/cdanielmachado/smetana).
 
 Questions and contributions: [GitHub issues](https://github.com/Eason9786/Co-occurrence-SMETANA/issues).
